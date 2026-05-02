@@ -1,0 +1,27 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ComplaintResponse {
+  id                String   @id @default(cuid())
+  complaintText     String
+  industry          String
+  channel           String
+  tone              String
+  stance            String
+  extraInfo         String?
+  companyName       String?
+  customerName      String?
+  generatedReply    String
+  replyIntent       String
+  improvementPoints String
+  ngExpressions     String
+  modelName         String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
