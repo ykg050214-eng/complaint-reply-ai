@@ -13,10 +13,15 @@
     "prisma:studio": "prisma studio"
   },
   "dependencies": {
-    "@prisma/client": "^6.0.0",
+    "@auth/prisma-adapter": "^2.7.4",
+    "@prisma/client": "^6.1.0",
+    "cheerio": "^1.0.0",
     "lucide-react": "^0.400.0",
+    "mammoth": "^1.8.0",
     "next": "16.2.4",
-    "openai": "^4.0.0",
+    "next-auth": "^4.24.10",
+    "openai": "^4.77.0",
+    "pdf-parse": "^1.1.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "autoprefixer": "^10.4.20",
@@ -25,6 +30,7 @@
   },
   "devDependencies": {
     "@types/node": "^20",
+    "@types/pdf-parse": "^1.1.4",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^8",
