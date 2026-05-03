@@ -1,38 +1,124 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getOpenAIClient, MODEL_NAME } from '@/lib/openai';
-import { buildSystemPrompt, buildUserPrompt } from '@/lib/prompt';
-import { validateGenerateRequest } from '@/lib/validation';
+import OpenAI from 'openai';
 import { prisma } from '@/lib/prisma';
+import { buildSystemPrompt, buildUserPrompt, PromptInput } from '@/lib/prompt';
+import { retrieveRelevantChunks } from '@/lib/rag';
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const validation = validateGenerateRequest(body);
-    if (!validation.valid || !validation.data) return NextResponse.json({ error: validation.error }, { status: 400 });
-    const data = validation.data;
-    let client;
-    try { client = getOpenAIClient(); } catch {
-      return NextResponse.json({ error: 'OpenAI APIキーが設定されていません。Vercelの環境変数にOPENAI_API_KEYを設定してください。' }, { status: 500 });
+    const {
+      complaintText,
+      industry,
+      channel,
+      tone,
+      stance,
+      extraInfo,
+      companyName,
+      customerName,
+      apiKey,
+      model,
+      organizationId,
+    } = body;
+
+    if (!complaintText || !industry || !channel || !tone || !stance) {
+      return NextResponse.json({ error: '必須項目が入力されていません' }, { status: 400 });
     }
-    const completion = await client.chat.completions.create({
-      model: MODEL_NAME,
-      messages: [{ role: 'system', content: buildSystemPrompt() }, { role: 'user', content: buildUserPrompt(data) }],
+    if (!apiKey) {
+      return NextResponse.json({ error: 'APIキーが設定されていません' }, { status: 400 });
+    }
+
+    const openai = new OpenAI({ apiKey });
+
+    // RAG: retrieve relevant knowledge chunks if organizationId is provided
+    let knowledgeContext = '';
+    if (organizationId) {
+      try {
+        const chunks = await retrieveRelevantChunks(complaintText, organizationId, openai);
+        if (chunks.length > 0) {
+          knowledgeContext = '\n\n【会社専用ナレッジベースより関連情報】\n' + chunks.join('\n\n---\n\n');
+        }
+      } catch {
+        // RAG failure is non-fatal
+      }
+    }
+
+    const input: PromptInput = {
+      complaintText,
+      industry,
+      channel,
+      tone,
+      stance,
+      extraInfo,
+      companyName,
+      customerName,
+    };
+
+    const systemPrompt = buildSystemPrompt() + knowledgeContext;
+    const userPrompt = buildUserPrompt(input);
+
+    const modelName = model || 'gpt-4o-mini';
+
+    const completion = await openai.chat.completions.create({
+      model: modelName,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
       temperature: 0.7,
-      response_format: { type: 'json_object' },
     });
-    const content = completion.choices[0]?.message?.content;
-    if (!content) return NextResponse.json({ error: 'AI返信文の生成に失敗しました。' }, { status: 500 });
-    let parsed: { generatedReply: string; replyIntent: string; improvementPoints: string; ngExpressions: string; };
-    try { parsed = JSON.parse(content); } catch {
-      return NextResponse.json({ error: 'AIの応答形式が正しくありません。' }, { status: 500 });
+
+    const rawContent = completion.choices[0]?.message?.content || '';
+
+    // Parse JSON response
+    const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      return NextResponse.json({ error: 'AIからの応答を解析できませんでした' }, { status: 500 });
     }
-    if (!parsed.generatedReply || !parsed.replyIntent || !parsed.improvementPoints || !parsed.ngExpressions)
-      return NextResponse.json({ error: 'AIの応答に必要な情報が含まれていません。' }, { status: 500 });
-    const record = await prisma.complaintResponse.create({
-      data: { complaintText: data.complaintText, industry: data.industry, channel: data.channel, tone: data.tone, stance: data.stance, extraInfo: data.extraInfo || null, companyName: data.companyName || null, customerName: data.customerName || null, generatedReply: parsed.generatedReply, replyIntent: parsed.replyIntent, improvementPoints: parsed.improvementPoints, ngExpressions: parsed.ngExpressions, modelName: MODEL_NAME },
+
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonMatch[0]);
+    } catch {
+      return NextResponse.json({ error: 'AIからの応答のJSONパースに失敗しました' }, { status: 500 });
+    }
+
+    // Save to database
+    const saved = await prisma.complaintResponse.create({
+      data: {
+        organizationId: organizationId || null,
+        complaintText,
+        industry,
+        channel,
+        tone,
+        stance,
+        extraInfo: extraInfo || null,
+        companyName: companyName || null,
+        customerName: customerName || null,
+        generatedReply: parsed.reply || '',
+        replyIntent: parsed.intent || '',
+        improvementPoints: parsed.improvements || '',
+        ngExpressions: parsed.ngExpressions || '',
+        modelName,
+      },
     });
-    return NextResponse.json({ id: record.id, generatedReply: record.generatedReply, replyIntent: record.replyIntent, improvementPoints: record.improvementPoints, ngExpressions: record.ngExpressions, modelName: record.modelName });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : '不明なエラーが発生しました。';
-    return NextResponse.json({ error: `AI返信文の生成に失敗しました。${message}` }, { status: 500 });
+
+    return NextResponse.json({
+      id: saved.id,
+      reply: parsed.reply || '',
+      intent: parsed.intent || '',
+      improvements: parsed.improvements || '',
+      ngExpressions: parsed.ngExpressions || '',
+      usedKnowledge: knowledgeContext.length > 0,
+    });
+  } catch (error: any) {
+    console.error('Generate error:', error);
+    if (error?.status === 401) {
+      return NextResponse.json({ error: 'APIキーが無効です' }, { status: 401 });
+    }
+    if (error?.status === 429) {
+      return NextResponse.json({ error: 'APIのレート制限に達しました。しばらく待ってから再試行してください' }, { status: 429 });
+    }
+    return NextResponse.json({ error: 'エラーが発生しました: ' + (error?.message || '不明なエラー') }, { status: 500 });
   }
 }
