@@ -1,9 +1,3 @@
-export { default } from 'next-auth/middleware';
-
-export const config = {
-  matcher: [
-    '/knowledge/:path*',
-    '/api/knowledge/:path*',
-    '/api/organizations/:path*',
-  ],
-};
+// This file is intentionally left empty.
+// Auth middleware has been moved to proxy.ts (Next.js 16 convention).
+export {};
