@@ -35,6 +35,11 @@ export default function KnowledgePage() {
   const [file, setFile] = useState<File | null>(null);
   const [newOrgName, setNewOrgName] = useState('');
   const [creatingOrg, setCreatingOrg] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [apiKeyMasked, setApiKeyMasked] = useState<string | null>(null);
+  const [apiKeyHasKey, setApiKeyHasKey] = useState(false);
+  const [apiKeySaving, setApiKeySaving] = useState(false);
+  const [apiKeyMsg, setApiKeyMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/auth/signin');
@@ -61,6 +66,17 @@ export default function KnowledgePage() {
     }
   }, [selectedOrgId]);
 
+  useEffect(() => {
+    if (!selectedOrgId) return;
+    fetch('/api/organizations/apikey?organizationId=' + selectedOrgId)
+      .then(r => r.json())
+      .then(data => {
+        setApiKeyHasKey(data.hasKey);
+        setApiKeyMasked(data.maskedKey);
+        setApiKeyInput('');
+      });
+  }, [selectedOrgId]);
+
   const handleUpload = async () => {
     if (!selectedOrgId) return;
     setUploading(true);
@@ -83,7 +99,7 @@ export default function KnowledgePage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('このドキュメントを削除しますか？')) return;
+    if (!confirm('ãã®ãã­ã¥ã¡ã³ããåé¤ãã¾ããï¼')) return;
     await fetch(`/api/knowledge/${id}`, { method: 'DELETE' });
     setDocs(prev => prev.filter(d => d.id !== id));
   };
@@ -103,6 +119,32 @@ export default function KnowledgePage() {
     setCreatingOrg(false);
   };
 
+  const handleSaveApiKey = async () => {
+    if (!selectedOrgId) return;
+    setApiKeySaving(true);
+    setApiKeyMsg(null);
+    try {
+      const res = await fetch('/api/organizations/apikey', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ organizationId: selectedOrgId, apiKey: apiKeyInput || null }),
+      });
+      if (res.ok) {
+        setApiKeyMsg({ type: 'success', text: 'APIキーを保存しました' });
+        setApiKeyHasKey(!!apiKeyInput);
+        setApiKeyMasked(apiKeyInput ? 'sk-...' + apiKeyInput.slice(-4) : null);
+        setApiKeyInput('');
+      } else {
+        const err = await res.json();
+        setApiKeyMsg({ type: 'error', text: err.error || '保存に失敗しました' });
+      }
+    } catch {
+      setApiKeyMsg({ type: 'error', text: 'ネットワークエラーが発生しました' });
+    } finally {
+      setApiKeySaving(false);
+    }
+  };
+
   if (status === 'loading') {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -117,35 +159,72 @@ export default function KnowledgePage() {
       <main className="max-w-4xl mx-auto px-4 py-8">
         <div className="flex items-center gap-3 mb-6">
           <FileText className="w-6 h-6 text-blue-600" />
-          <h1 className="text-2xl font-bold text-gray-800">ナレッジベース管理</h1>
+          <h1 className="text-2xl font-bold text-gray-800">ãã¬ãã¸ãã¼ã¹ç®¡ç</h1>
         </div>
 
         {/* Privacy Notice */}
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 flex items-start gap-3">
           <Shield className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
           <div className="text-sm text-blue-800">
-            <p className="font-semibold mb-1">🔒 プライバシーについて</p>
+            <p className="font-semibold mb-1">ð ãã©ã¤ãã·ã¼ã«ã¤ãã¦</p>
             <p>
-              アップロードされた情報は<strong>このアプリ内のデータベースにのみ</strong>保存されます。
-              AI生成時は質問に関連する一部のテキスト（最大約800文字）のみをOpenAI APIに送信します。
-              <strong>OpenAI社はAPIで受け取ったデータを学習・保存しません</strong>
-              （
+              ã¢ããã­ã¼ããããæå ±ã¯<strong>ãã®ã¢ããªåã®ãã¼ã¿ãã¼ã¹ã«ã®ã¿</strong>ä¿å­ããã¾ãã
+              AIçææã¯è³ªåã«é¢é£ããä¸é¨ã®ãã­ã¹ãï¼æå¤§ç´800æå­ï¼ã®ã¿ãOpenAI APIã«éä¿¡ãã¾ãã
+              <strong>OpenAIç¤¾ã¯APIã§åãåã£ããã¼ã¿ãå­¦ç¿ã»ä¿å­ãã¾ãã</strong>
+              ï¼
               <a
                 href="https://openai.com/policies/api-data-usage-policies"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="underline"
               >
-                OpenAI利用規約
+                OpenAIå©ç¨è¦ç´
               </a>
-              より）。
+              ããï¼ã
             </p>
           </div>
         </div>
 
+          {/* OpenAI API キー設定 */}
+          <div className="bg-white border border-gray-200 rounded-xl p-6 mb-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-1 flex items-center gap-2">
+              <Shield className="w-4 h-4 text-blue-600" />
+              OpenAI API キー設定
+            </h3>
+            <p className="text-sm text-gray-500 mb-4">
+              組織専用の OpenAI API キーを設定します。設定すると、この組織のリクエストにのみ使用されます。
+            </p>
+            {apiKeyHasKey && apiKeyMasked && (
+              <p className="text-sm text-gray-600 mb-3">
+                現在のキー: <span className="font-mono bg-gray-100 px-2 py-0.5 rounded">{apiKeyMasked}</span>
+              </p>
+            )}
+            <div className="flex gap-2">
+              <input
+                type="password"
+                value={apiKeyInput}
+                onChange={e => setApiKeyInput(e.target.value)}
+                placeholder={apiKeyHasKey ? '新しいキーを入力して上書き' : 'sk-...'}
+                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                onClick={handleSaveApiKey}
+                disabled={apiKeySaving || !apiKeyInput}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {apiKeySaving ? '保存中...' : '保存'}
+              </button>
+            </div>
+            {apiKeyMsg && (
+              <p className={`mt-2 text-sm ${apiKeyMsg.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                {apiKeyMsg.text}
+              </p>
+            )}
+          </div>
+
         {/* Organization Selector */}
         <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm mb-6">
-          <h2 className="font-semibold text-gray-700 mb-4">会社・組織の選択</h2>
+          <h2 className="font-semibold text-gray-700 mb-4">ä¼ç¤¾ã»çµç¹ã®é¸æ</h2>
           {orgs.length > 0 && (
             <div className="flex gap-2 flex-wrap mb-4">
               {orgs.map(org => (
@@ -167,7 +246,7 @@ export default function KnowledgePage() {
             <input
               value={newOrgName}
               onChange={e => setNewOrgName(e.target.value)}
-              placeholder="新しい会社名を入力..."
+              placeholder="æ°ããä¼ç¤¾åãå¥å..."
               className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm"
               onKeyDown={e => e.key === 'Enter' && handleCreateOrg()}
             />
@@ -176,7 +255,7 @@ export default function KnowledgePage() {
               disabled={creatingOrg || !newOrgName.trim()}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm disabled:opacity-50 hover:bg-blue-700 transition-colors"
             >
-              {creatingOrg ? '作成中...' : '会社を追加'}
+              {creatingOrg ? 'ä½æä¸­...' : 'ä¼ç¤¾ãè¿½å '}
             </button>
           </div>
         </div>
@@ -185,7 +264,7 @@ export default function KnowledgePage() {
           <>
             {/* Upload Section */}
             <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm mb-6">
-              <h2 className="font-semibold text-gray-700 mb-4">ドキュメントをアップロード</h2>
+              <h2 className="font-semibold text-gray-700 mb-4">ãã­ã¥ã¡ã³ããã¢ããã­ã¼ã</h2>
               <div className="flex gap-2 mb-4">
                 {(['pdf', 'docx', 'txt', 'url'] as const).map(t => (
                   <button
@@ -197,7 +276,7 @@ export default function KnowledgePage() {
                         : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                     }`}
                   >
-                    {t === 'url' ? '🌐 URL' : t.toUpperCase()}
+                    {t === 'url' ? 'ð URL' : t.toUpperCase()}
                   </button>
                 ))}
               </div>
@@ -224,7 +303,7 @@ export default function KnowledgePage() {
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm disabled:opacity-50 hover:bg-blue-700 transition-colors"
               >
                 <Upload className="w-4 h-4" />
-                {uploading ? 'アップロード中...' : 'アップロード'}
+                {uploading ? 'ã¢ããã­ã¼ãä¸­...' : 'ã¢ããã­ã¼ã'}
               </button>
             </div>
 
@@ -258,10 +337,10 @@ export default function KnowledgePage() {
                         )}
                         <span className="text-xs text-gray-400">
                           {doc.status === 'ready'
-                            ? '完了'
+                            ? 'å®äº'
                             : doc.status === 'processing'
-                            ? '処理中'
-                            : 'エラー'}
+                            ? 'å¦çä¸­'
+                            : 'ã¨ã©ã¼'}
                         </span>
                       </div>
                     </div>
@@ -276,7 +355,7 @@ export default function KnowledgePage() {
               ))}
               {docs.length === 0 && (
                 <p className="text-center text-gray-400 text-sm py-8">
-                  まだドキュメントがありません
+                  ã¾ã ãã­ã¥ã¡ã³ããããã¾ãã
                 </p>
               )}
             </div>
