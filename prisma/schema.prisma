@@ -56,14 +56,15 @@ model VerificationToken {
 }
 
 model Organization {
-  id         String               @id @default(cuid())
-  name       String
-  slug       String               @unique
-  createdAt  DateTime             @default(now())
-  updatedAt  DateTime             @updatedAt
-  members    OrganizationMember[]
-  documents  KnowledgeDocument[]
-  complaints ComplaintResponse[]
+  id           String               @id @default(cuid())
+  name         String
+  slug         String               @unique
+  openaiApiKey String?
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  members      OrganizationMember[]
+  documents    KnowledgeDocument[]
+  complaints   ComplaintResponse[]
 }
 
 model OrganizationMember {
