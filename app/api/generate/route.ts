@@ -5,11 +5,6 @@ import OpenAI from 'openai';
 import { prisma } from '@/lib/prisma';
 import { retrieveRelevantChunks } from '@/lib/rag';
 
-const ALLOWED_INDUSTRIES = ['飲食・フード', 'EC・通販', '美容・サロン', '医療・クリニック', 'ホテル・旅館', '小売・店舗', 'IT・SaaS', '教育・スクール', '不動産', '金融・保険', '物流・運送', 'その他'];
-const ALLOWED_CHANNELS = ['メール', 'LINE', 'Google口コミ返信', 'チャット', '手紙・文書', 'その他'];
-const ALLOWED_TONES = ['丁寧・フォーマル', 'やや柔らかい', 'カジュアル'];
-const ALLOWED_STANCES = ['全面謝罪', '部分謝罪', '事実確認重視', '毅然とした対応'];
-
 function buildSystemPrompt(knowledgeContext: string): string {
   return `あなたはプロのカスタマーサポート担当者です。クレームに対して誠実で丁寧な返信文を作成してください。
 
@@ -49,21 +44,20 @@ export async function POST(req: NextRequest) {
     const { complaintText, industry, channel, tone, stance, extraInfo, companyName, customerName, organizationId } = body;
 
     if (!complaintText?.trim()) return NextResponse.json({ error: 'クレーム内容を入力してください' }, { status: 400 });
-    if (!ALLOWED_INDUSTRIES.includes(industry)) return NextResponse.json({ error: '無効な業種です' }, { status: 400 });
-    if (!ALLOWED_CHANNELS.includes(channel)) return NextResponse.json({ error: '無効な返信媒体です' }, { status: 400 });
-    if (!ALLOWED_TONES.includes(tone)) return NextResponse.json({ error: '無効なトーンです' }, { status: 400 });
-    if (!ALLOWED_STANCES.includes(stance)) return NextResponse.json({ error: '無効な返信の強さです' }, { status: 400 });
+    if (!industry?.trim()) return NextResponse.json({ error: '業種を選択してください' }, { status: 400 });
+    if (!channel?.trim()) return NextResponse.json({ error: '返信媒体を選択してください' }, { status: 400 });
+    if (!tone?.trim()) return NextResponse.json({ error: 'トーンを選択してください' }, { status: 400 });
+    if (!stance?.trim()) return NextResponse.json({ error: '返信の強さを選択してください' }, { status: 400 });
 
     // Determine which API key to use
     let apiKey = process.env.OPENAI_API_KEY;
-    
     if (organizationId) {
       const org = await prisma.organization.findUnique({ where: { id: organizationId } });
       if (org?.openaiApiKey) {
         apiKey = org.openaiApiKey;
       }
     }
-    
+
     if (!apiKey) {
       return NextResponse.json({ error: 'OpenAI APIキーが設定されていません。ナレッジ管理画面でAPIキーを設定してください。' }, { status: 400 });
     }
@@ -97,7 +91,6 @@ export async function POST(req: NextRequest) {
     const parsed = JSON.parse(raw);
 
     const session = await getServerSession(authOptions);
-
     const record = await prisma.complaintResponse.create({
       data: {
         organizationId: organizationId || null,
@@ -117,7 +110,14 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ id: record.id, generatedReply: record.generatedReply, replyIntent: record.replyIntent, improvementPoints: record.improvementPoints, ngExpressions: record.ngExpressions, modelName: MODEL_NAME });
+    return NextResponse.json({
+      id: record.id,
+      generatedReply: record.generatedReply,
+      replyIntent: record.replyIntent,
+      improvementPoints: record.improvementPoints,
+      ngExpressions: record.ngExpressions,
+      modelName: MODEL_NAME
+    });
   } catch (error: any) {
     return NextResponse.json({ error: 'AI返信文の生成に失敗しました。' + (error?.message || '') }, { status: 500 });
   }
