@@ -81,9 +81,21 @@ export async function POST(req: NextRequest) {
     if (type === 'txt') {
       content = buffer.toString('utf-8');
     } else if (type === 'pdf') {
-      const pdfParse = (await import('pdf-parse')).default;
-      const data = await pdfParse(buffer);
-      content = data.text;
+      try {
+        const pdfParse = (await import('pdf-parse')).default;
+        const data = await pdfParse(buffer);
+        content = data.text || '';
+        if (!content.trim()) {
+          return NextResponse.json({
+            error: 'PDFからテキストを抽出できませんでした。スキャン画像PDFやパスワード保護されたPDFは対応していません。テキスト形式のPDFをご使用ください。'
+          }, { status: 400 });
+        }
+      } catch (pdfError: any) {
+        console.error('PDF parse error:', pdfError);
+        return NextResponse.json({
+          error: `PDFの解析に失敗しました: ${pdfError?.message || '不明なエラー'}。パスワード保護されたPDFやスキャン画像PDFは対応していません。`
+        }, { status: 400 });
+      }
     } else if (type === 'docx') {
       const mammoth = await import('mammoth');
       const result = await mammoth.extractRawText({ buffer });
@@ -103,7 +115,6 @@ export async function POST(req: NextRequest) {
       const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
       const chunks = chunkText(content);
       const embeddings = await embedChunks(chunks, openai);
-
       await prisma.$transaction(
         chunks.map((chunk, i) =>
           prisma.documentChunk.create({
@@ -111,7 +122,6 @@ export async function POST(req: NextRequest) {
           })
         )
       );
-
       for (let i = 0; i < chunks.length; i++) {
         const chunk = await prisma.documentChunk.findFirst({
           where: { documentId: doc.id, chunkIndex: i },
@@ -124,7 +134,6 @@ export async function POST(req: NextRequest) {
           );
         }
       }
-
       await prisma.knowledgeDocument.update({ where: { id: doc.id }, data: { status: 'ready' } });
     } catch {
       await prisma.knowledgeDocument.update({ where: { id: doc.id }, data: { status: 'error' } });
