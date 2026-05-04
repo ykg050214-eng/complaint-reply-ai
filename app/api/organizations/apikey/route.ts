@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
 
   await prisma.organization.update({
     where: { id: organizationId },
-    data: { openaiApiKey: apiKey || null },
+    data: { openaiApiKey: apiKey ? apiKey.trim() : null },
   });
 
   return NextResponse.json({ success: true });
