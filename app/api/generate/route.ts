@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
     if (organizationId) {
       const org = await prisma.organization.findUnique({ where: { id: organizationId } });
       if (org?.openaiApiKey) {
-        apiKey = org.openaiApiKey;
+        apiKey = org.openaiApiKey.trim();
       }
     }
 
