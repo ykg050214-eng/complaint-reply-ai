@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
         content = data.text || '';
         if (!content.trim()) {
           return NextResponse.json({
-            error: 'PDFからテキストを抽出できませんでした。スキャン画像PDFやパスワード保護されたPDFは対応していません。テキスト形式のPDFをご使用ください。'
+            error: 'このPDFはテキストを含まない画像ベースのPDFのため、抽出できませんでした。テキストベースのPDFまたはTXTファイルをお試しください。'
           }, { status: 400 });
         }
       } catch (pdfError: any) {
