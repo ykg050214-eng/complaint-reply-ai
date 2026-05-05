@@ -47,6 +47,73 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(docs);
 }
 
+
+// OCR fallback using OpenAI Vision API (GPT-4o-mini)
+async function ocrPdfWithOpenAI(pdfBuffer: Buffer, orgOpenAIKey: string): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs' as any);
+  const { createCanvas } = await import('canvas');
+
+  const pdfData = new Uint8Array(pdfBuffer);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const loadingTask = (pdfjsLib as any).getDocument({ data: pdfData });
+  const pdf = await loadingTask.promise;
+
+  const pageTexts: string[] = [];
+  const maxPages = Math.min(pdf.numPages, 10);
+
+  for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
+    const page = await pdf.getPage(pageNum);
+    const viewport = page.getViewport({ scale: 1.5 });
+
+    const canvas = createCanvas(viewport.width, viewport.height);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const context = canvas.getContext('2d') as any;
+
+    await page.render({ canvasContext: context, viewport }).promise;
+
+    const imageBase64 = canvas.toBuffer('image/png').toString('base64');
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${orgOpenAIKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: 'このPDFページに書かれているテキストをすべて正確に抽出してください。書式や改行はできるだけ保持してください。テキストのみを返し、説明は不要です。',
+              },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:image/png;base64,${imageBase64}`,
+                  detail: 'high',
+                },
+              },
+            ],
+          },
+        ],
+        max_tokens: 4096,
+      }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      const text = data.choices?.[0]?.message?.content || '';
+      if (text) pageTexts.push(`--- ページ ${pageNum} ---\n${text}`);
+    }
+  }
+
+  return pageTexts.join('\n\n');
+}
+
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!(session?.user as any)?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -85,10 +152,32 @@ export async function POST(req: NextRequest) {
         const pdfParse = (await import('pdf-parse')).default;
         const data = await pdfParse(buffer);
         content = data.text || '';
-        if (!content.trim()) {
-          return NextResponse.json({
-            error: 'このPDFはテキストを含まない画像ベースのPDFのため、抽出できませんでした。テキストベースのPDFまたはTXTファイルをお試しください。'
-          }, { status: 400 });
+        if (!content || content.trim().length < 10) {
+          // Fallback: OCR via OpenAI Vision
+          const org = await prisma.organization.findUnique({ where: { id: organizationId } });
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const orgApiKey = (org as any)?.openaiApiKey?.trim() || process.env.OPENAI_API_KEY;
+          if (orgApiKey) {
+            try {
+              content = await ocrPdfWithOpenAI(buffer, orgApiKey);
+              if (!content || content.trim().length < 10) {
+                return NextResponse.json(
+                  { error: 'PDFからテキストを抽出できませんでした。文字が鳥明なスキャンPDFか、テキストベースのPDFをご使用ください。' },
+                  { status: 400 }
+                );
+              }
+            } catch (ocrErr) {
+              return NextResponse.json(
+                { error: `OCR処理に失敗しました: ${ocrErr instanceof Error ? ocrErr.message : String(ocrErr)}` },
+                { status: 400 }
+              );
+            }
+          } else {
+            return NextResponse.json(
+              { error: 'APIキーが設定されていないため、画像PDFのOCRができません。設定ページでAPIキーを設定してください。' },
+              { status: 400 }
+            );
+          }
         }
       } catch (pdfError: any) {
         console.error('PDF parse error:', pdfError);
