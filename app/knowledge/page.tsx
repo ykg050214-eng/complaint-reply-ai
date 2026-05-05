@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import Header from '@/components/Header';
 
 interface Organization {
   id: string;
@@ -164,7 +165,9 @@ export default function KnowledgePage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto p-4">
+    <div className="min-h-screen bg-gray-50">
+      <Header />
+      <main className="max-w-2xl mx-auto p-4">
       <h1 className="text-2xl font-bold mb-6">ナレッジ管理</h1>
 
       {organizations.length === 0 ? (
@@ -304,6 +307,7 @@ export default function KnowledgePage() {
           </div>
         </>
       )}
+      </main>
     </div>
   );
 }
