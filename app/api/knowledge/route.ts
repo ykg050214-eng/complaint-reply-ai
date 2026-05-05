@@ -50,68 +50,43 @@ export async function GET(req: NextRequest) {
 
 // OCR fallback using OpenAI Vision API (GPT-4o-mini)
 async function ocrPdfWithOpenAI(pdfBuffer: Buffer, orgOpenAIKey: string): Promise<string> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs' as any);
-  const { createCanvas } = await import('canvas');
-
-  const pdfData = new Uint8Array(pdfBuffer);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const loadingTask = (pdfjsLib as any).getDocument({ data: pdfData });
-  const pdf = await loadingTask.promise;
-
-  const pageTexts: string[] = [];
-  const maxPages = Math.min(pdf.numPages, 10);
-
-  for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
-    const page = await pdf.getPage(pageNum);
-    const viewport = page.getViewport({ scale: 1.5 });
-
-    const canvas = createCanvas(viewport.width, viewport.height);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const context = canvas.getContext('2d') as any;
-
-    await page.render({ canvasContext: context, viewport }).promise;
-
-    const imageBase64 = canvas.toBuffer('image/png').toString('base64');
-
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${orgOpenAIKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
+  const base64Pdf = pdfBuffer.toString('base64');
+  
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${orgOpenAIKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [{
+        role: 'user',
+        content: [
           {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: 'このPDFページに書かれているテキストをすべて正確に抽出してください。書式や改行はできるだけ保持してください。テキストのみを返し、説明は不要です。',
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: `data:image/png;base64,${imageBase64}`,
-                  detail: 'high',
-                },
-              },
-            ],
+            type: 'file',
+            file: {
+              filename: 'document.pdf',
+              file_data: `data:application/pdf;base64,${base64Pdf}`,
+            },
+          },
+          {
+            type: 'text',
+            text: 'このPDFに書かれているテキストをすべて正確に抽出してください。書式や改行はできるだけ保持してください。テキストのみを返し、説明や前置きは不要です。',
           },
         ],
-        max_tokens: 4096,
-      }),
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      const text = data.choices?.[0]?.message?.content || '';
-      if (text) pageTexts.push(`--- ページ ${pageNum} ---\n${text}`);
-    }
+      }],
+      max_tokens: 4096,
+    }),
+  });
+  
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.error?.message || `OpenAI API error: ${response.status}`);
   }
-
-  return pageTexts.join('\n\n');
+  
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || '';
 }
 
 export async function POST(req: NextRequest) {
