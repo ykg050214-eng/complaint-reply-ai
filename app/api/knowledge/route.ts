@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const CHUNK_SIZE = 800;
 const CHUNK_OVERLAP = 100;
@@ -18,12 +18,15 @@ function chunkText(text: string): string[] {
   return chunks.filter(c => c.length > 50);
 }
 
-async function embedChunks(chunks: string[], openai: OpenAI): Promise<number[][]> {
-  const response = await openai.embeddings.create({
-    model: 'text-embedding-3-small',
-    input: chunks,
-  });
-  return response.data.map(d => d.embedding);
+async function embedChunks(chunks: string[], genAI: GoogleGenerativeAI): Promise<number[][]> {
+  const embModel = genAI.getGenerativeModel({ model: 'text-embedding-004' });
+  const embeddings = await Promise.all(
+    chunks.map(async (chunk) => {
+      const result = await embModel.embedContent(chunk);
+      return result.embedding.values;
+    })
+  );
+  return embeddings;
 }
 
 export async function GET(req: NextRequest) {
@@ -48,45 +51,16 @@ export async function GET(req: NextRequest) {
 }
 
 
-// OCR fallback using OpenAI Vision API (GPT-4o-mini)
-async function ocrPdfWithOpenAI(pdfBuffer: Buffer, orgOpenAIKey: string): Promise<string> {
+// OCR fallback using Gemini Vision
+async function ocrPdfWithGemini(pdfBuffer: Buffer, geminiApiKey: string): Promise<string> {
+  const genAI = new GoogleGenerativeAI(geminiApiKey);
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
   const base64Pdf = pdfBuffer.toString('base64');
-  
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${orgOpenAIKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [{
-        role: 'user',
-        content: [
-          {
-            type: 'file',
-            file: {
-              filename: 'document.pdf',
-              file_data: `data:application/pdf;base64,${base64Pdf}`,
-            },
-          },
-          {
-            type: 'text',
-            text: 'このPDFに書かれているテキストをすべて正確に抽出してください。書式や改行はできるだけ保持してください。テキストのみを返し、説明や前置きは不要です。',
-          },
-        ],
-      }],
-      max_tokens: 4096,
-    }),
-  });
-  
-  if (!response.ok) {
-    const errData = await response.json().catch(() => ({}));
-    throw new Error(errData.error?.message || `OpenAI API error: ${response.status}`);
-  }
-  
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content || '';
+  const result = await model.generateContent([
+    { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } },
+    'このPDFに書かれているテキストをすべて正確に抽出してください。書式や改行はできるだけ保持してください。テキストのみを返し、説明は不要です。',
+  ]);
+  return result.response.text();
 }
 
 export async function POST(req: NextRequest) {
@@ -128,13 +102,13 @@ export async function POST(req: NextRequest) {
         const data = await pdfParse(buffer);
         content = data.text || '';
         if (!content || content.trim().length < 10) {
-          // Fallback: OCR via OpenAI Vision
+          // Fallback: OCR via Gemini Vision
           const org = await prisma.organization.findUnique({ where: { id: organizationId } });
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const orgApiKey = (org as any)?.openaiApiKey?.trim() || process.env.OPENAI_API_KEY;
+          const orgApiKey = (org as any)?.geminiApiKey?.trim() || process.env.GEMINI_API_KEY;
           if (orgApiKey) {
             try {
-              content = await ocrPdfWithOpenAI(buffer, orgApiKey);
+              content = await ocrPdfWithGemini(buffer, orgApiKey);
               if (!content || content.trim().length < 10) {
                 return NextResponse.json(
                   { error: 'PDFからテキストを抽出できませんでした。文字が鳥明なスキャンPDFか、テキストベースのPDFをご使用ください。' },
@@ -176,9 +150,9 @@ export async function POST(req: NextRequest) {
   // Embed chunks in background
   (async () => {
     try {
-      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
       const chunks = chunkText(content);
-      const embeddings = await embedChunks(chunks, openai);
+      const embeddings = await embedChunks(chunks, genAI);
       await prisma.$transaction(
         chunks.map((chunk, i) =>
           prisma.documentChunk.create({
