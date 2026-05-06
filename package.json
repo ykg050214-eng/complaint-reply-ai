@@ -20,7 +20,7 @@
     "mammoth": "^1.8.0",
     "next": "16.2.4",
     "next-auth": "^4.24.10",
-    "openai": "^4.77.0",
+    "@google/generative-ai": "^0.21.0",
     "pdf-parse": "^1.1.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
