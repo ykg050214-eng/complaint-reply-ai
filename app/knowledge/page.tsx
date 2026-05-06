@@ -187,13 +187,13 @@ export default function KnowledgePage() {
             </select>
           </div>
 
-          {/* OpenAI API キー設定 */}
+          {/* Gemini API キー設定 */}
           <div className="mb-6 p-4 border border-gray-200 rounded-lg bg-gray-50">
             <h2 className="text-lg font-semibold mb-1 flex items-center gap-2">
-              <span>🔑</span> OpenAI API キー設定
+              <span>🔑</span> Gemini API キー設定
             </h2>
             <p className="text-sm text-gray-600 mb-3">
-              組織専用の OpenAI API キーを設定します。設定すると、この組織のリクエストにのみ使用されます。
+              組織専用の Gemini API キーを設定します。設定すると、この組織のリクエストにのみ使用されます。
             </p>
             {apiKeyHasKey && (
               <p className="text-sm text-green-700 mb-2">
@@ -205,7 +205,7 @@ export default function KnowledgePage() {
                 type="password"
                 value={apiKeyInput}
                 onChange={(e) => setApiKeyInput(e.target.value)}
-                placeholder={apiKeyHasKey ? 'キーを更新する場合は入力' : 'sk-...'}
+                placeholder={apiKeyHasKey ? 'キーを更新する場合は入力' : 'AIza...'}
                 className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm"
               />
               <button
