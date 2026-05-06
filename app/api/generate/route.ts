@@ -6,36 +6,36 @@ import { prisma } from '@/lib/prisma';
 import { retrieveRelevantChunks } from '@/lib/rag';
 
 function buildSystemPrompt(knowledgeContext: string): string {
-  return `あなたはプロのカスタマーサポート担当者です。クレームに対して誠実で丁寧な返信文を作成してください。
+  return `ããªãã¯ãã­ã®ã«ã¹ã¿ãã¼ãµãã¼ãæå½èã§ããã¯ã¬ã¼ã ã«å¯¾ãã¦èª å®ã§ä¸å¯§ãªè¿ä¿¡æãä½æãã¦ãã ããã
 
-返答はJSON形式で、以下のキーを含めてください：
-- generatedReply: 返信文（そのままコピペできる完全な文章）
-- replyIntent: この返信の意図・ポイント（100文字以内）
-- improvementPoints: 改善できる点・注意事項（100文字以内）
-- ngExpressions: 使ってはいけない表現例（50文字以内）
+è¿ç­ã¯JSONå½¢å¼ã§ãä»¥ä¸ã®ã­ã¼ãå«ãã¦ãã ããï¼
+- generatedReply: è¿ä¿¡æï¼ãã®ã¾ã¾ã³ããã§ããå®å¨ãªæç« ï¼
+- replyIntent: ãã®è¿ä¿¡ã®æå³ã»ãã¤ã³ãï¼100æå­ä»¥åï¼
+- improvementPoints: æ¹åã§ããç¹ã»æ³¨æäºé ï¼100æå­ä»¥åï¼
+- ngExpressions: ä½¿ã£ã¦ã¯ãããªãè¡¨ç¾ä¾ï¼50æå­ä»¥åï¼
 ${knowledgeContext ? `
-【会社専用ナレッジベース】
-以下の会社情報を参考にして、会社のポリシーや対応方針に沿った返信を作成してください：
+ãä¼ç¤¾å°ç¨ãã¬ãã¸ãã¼ã¹ã
+ä»¥ä¸ã®ä¼ç¤¾æå ±ãåèã«ãã¦ãä¼ç¤¾ã®ããªã·ã¼ãå¯¾å¿æ¹éã«æ²¿ã£ãè¿ä¿¡ãä½æãã¦ãã ããï¼
 
 ${knowledgeContext}
 
-※上記情報はこのアプリ内にのみ保存された会社専用情報です。` : ''}`;
+â»ä¸è¨æå ±ã¯ãã®ã¢ããªåã«ã®ã¿ä¿å­ãããä¼ç¤¾å°ç¨æå ±ã§ãã` : ''}`;
 }
 
 function buildUserPrompt(body: any): string {
-  return `以下のクレームに返信してください：
+  return `ä»¥ä¸ã®ã¯ã¬ã¼ã ã«è¿ä¿¡ãã¦ãã ããï¼
 
-【クレーム内容】
+ãã¯ã¬ã¼ã åå®¹ã
 ${body.complaintText}
 
-【設定】
-- 業種: ${body.industry}
-- 返信媒体: ${body.channel}
-- トーン: ${body.tone}
-- 返信の強さ: ${body.stance}
-${body.companyName ? `- 会社名: ${body.companyName}` : ''}
-${body.customerName ? `- 相手の呼び方: ${body.customerName}` : ''}
-${body.extraInfo ? `- 補足情報: ${body.extraInfo}` : ''}`;
+ãè¨­å®ã
+- æ¥­ç¨®: ${body.industry}
+- è¿ä¿¡åªä½: ${body.channel}
+- ãã¼ã³: ${body.tone}
+- è¿ä¿¡ã®å¼·ã: ${body.stance}
+${body.companyName ? `- ä¼ç¤¾å: ${body.companyName}` : ''}
+${body.customerName ? `- ç¸æã®å¼ã³æ¹: ${body.customerName}` : ''}
+${body.extraInfo ? `- è£è¶³æå ±: ${body.extraInfo}` : ''}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -43,11 +43,11 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { complaintText, industry, channel, tone, stance, extraInfo, companyName, customerName, organizationId } = body;
 
-    if (!complaintText?.trim()) return NextResponse.json({ error: 'クレーム内容を入力してください' }, { status: 400 });
-    if (!industry?.trim()) return NextResponse.json({ error: '業種を選択してください' }, { status: 400 });
-    if (!channel?.trim()) return NextResponse.json({ error: '返信媒体を選択してください' }, { status: 400 });
-    if (!tone?.trim()) return NextResponse.json({ error: 'トーンを選択してください' }, { status: 400 });
-    if (!stance?.trim()) return NextResponse.json({ error: '返信の強さを選択してください' }, { status: 400 });
+    if (!complaintText?.trim()) return NextResponse.json({ error: 'ã¯ã¬ã¼ã åå®¹ãå¥åãã¦ãã ãã' }, { status: 400 });
+    if (!industry?.trim()) return NextResponse.json({ error: 'æ¥­ç¨®ãé¸æãã¦ãã ãã' }, { status: 400 });
+    if (!channel?.trim()) return NextResponse.json({ error: 'è¿ä¿¡åªä½ãé¸æãã¦ãã ãã' }, { status: 400 });
+    if (!tone?.trim()) return NextResponse.json({ error: 'ãã¼ã³ãé¸æãã¦ãã ãã' }, { status: 400 });
+    if (!stance?.trim()) return NextResponse.json({ error: 'è¿ä¿¡ã®å¼·ããé¸æãã¦ãã ãã' }, { status: 400 });
 
     // Determine which API key to use
     let apiKey = process.env.GEMINI_API_KEY;
@@ -59,11 +59,11 @@ export async function POST(req: NextRequest) {
     }
 
     if (!apiKey) {
-      return NextResponse.json({ error: 'Gemini APIキーが設定されていません。ナレッジ管理画面でAPIキーを設定してください。' }, { status: 400 });
+      return NextResponse.json({ error: 'Gemini APIã­ã¼ãè¨­å®ããã¦ãã¾ããããã¬ãã¸ç®¡çç»é¢ã§APIã­ã¼ãè¨­å®ãã¦ãã ããã' }, { status: 400 });
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const MODEL_NAME = 'gemini-1.5-flash';
+    const MODEL_NAME = 'gemini-2.0-flash';
 
     // RAG: get relevant knowledge chunks
     let knowledgeContext = '';
@@ -114,6 +114,6 @@ export async function POST(req: NextRequest) {
       modelName: MODEL_NAME
     });
   } catch (error: any) {
-    return NextResponse.json({ error: 'AI返信文の生成に失敗しました。' + (error?.message || '') }, { status: 500 });
+    return NextResponse.json({ error: 'AIè¿ä¿¡æã®çæã«å¤±æãã¾ããã' + (error?.message || '') }, { status: 500 });
   }
 }
