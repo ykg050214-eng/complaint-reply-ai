@@ -19,8 +19,8 @@ export async function GET(req: NextRequest) {
   if (!member) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
   const org = await prisma.organization.findUnique({ where: { id: orgId } });
-  const hasKey = !!(org?.openaiApiKey);
-  const maskedKey = hasKey ? 'sk-...' + org!.openaiApiKey!.slice(-4) : null;
+  const hasKey = !!(org?.geminiApiKey);
+  const maskedKey = hasKey ? 'AIza...' + org!.geminiApiKey!.slice(-4) : null;
 
   return NextResponse.json({ hasKey, maskedKey });
 }
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
 
   await prisma.organization.update({
     where: { id: organizationId },
-    data: { openaiApiKey: apiKey ? apiKey.trim() : null },
+    data: { geminiApiKey: apiKey ? apiKey.trim() : null },
   });
 
   return NextResponse.json({ success: true });
