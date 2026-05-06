@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { prisma } from '@/lib/prisma';
 import { retrieveRelevantChunks } from '@/lib/rag';
 
@@ -50,44 +50,39 @@ export async function POST(req: NextRequest) {
     if (!stance?.trim()) return NextResponse.json({ error: '返信の強さを選択してください' }, { status: 400 });
 
     // Determine which API key to use
-    let apiKey = process.env.OPENAI_API_KEY;
+    let apiKey = process.env.GEMINI_API_KEY;
     if (organizationId) {
       const org = await prisma.organization.findUnique({ where: { id: organizationId } });
-      if (org?.openaiApiKey) {
-        apiKey = org.openaiApiKey.trim();
+      if (org?.geminiApiKey) {
+        apiKey = org.geminiApiKey.trim();
       }
     }
 
     if (!apiKey) {
-      return NextResponse.json({ error: 'OpenAI APIキーが設定されていません。ナレッジ管理画面でAPIキーを設定してください。' }, { status: 400 });
+      return NextResponse.json({ error: 'Gemini APIキーが設定されていません。ナレッジ管理画面でAPIキーを設定してください。' }, { status: 400 });
     }
 
-    const openai = new OpenAI({ apiKey });
-    const MODEL_NAME = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const MODEL_NAME = 'gemini-1.5-flash';
 
     // RAG: get relevant knowledge chunks
     let knowledgeContext = '';
     if (organizationId) {
       try {
-        const chunks = await retrieveRelevantChunks(complaintText, organizationId, openai);
+        const chunks = await retrieveRelevantChunks(complaintText, organizationId, apiKey);
         if (chunks.length > 0) {
           knowledgeContext = chunks.join('\n\n---\n\n');
         }
       } catch {}
     }
 
-    const completion = await openai.chat.completions.create({
+        const model = genAI.getGenerativeModel({
       model: MODEL_NAME,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: buildSystemPrompt(knowledgeContext) },
-        { role: 'user', content: buildUserPrompt(body) },
-      ],
-      temperature: 0.7,
-      max_tokens: 2000,
+      generationConfig: { responseMimeType: 'application/json' },
     });
-
-    const raw = completion.choices[0]?.message?.content || '{}';
+    const prompt = `${buildSystemPrompt(knowledgeContext)}\n\n${buildUserPrompt(body)}`;
+    const result = await model.generateContent(prompt);
+    const raw = result.response.text();
     const parsed = JSON.parse(raw);
 
     const session = await getServerSession(authOptions);
