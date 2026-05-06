@@ -59,7 +59,7 @@ model Organization {
   id           String               @id @default(cuid())
   name         String
   slug         String               @unique
-  openaiApiKey String?
+  geminiApiKey String?
   createdAt    DateTime             @default(now())
   updatedAt    DateTime             @updatedAt
   members      OrganizationMember[]
@@ -98,7 +98,7 @@ model DocumentChunk {
   documentId String
   content    String            @db.Text
   chunkIndex Int
-  embedding  Unsupported("vector(1536)")?
+  embedding  Unsupported("vector(768)")?
   document   KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
   createdAt  DateTime          @default(now())
 }
