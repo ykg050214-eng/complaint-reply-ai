@@ -1,7 +1,7 @@
-import OpenAI from 'openai';
-export const MODEL_NAME = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
-export function getOpenAIClient(): OpenAI {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error('OpenAI APIキーが設定されていません。');
-  return new OpenAI({ apiKey });
+import { GoogleGenerativeAI } from '@google/generative-ai';
+export const MODEL_NAME = 'gemini-1.5-flash';
+export function getGeminiClient(): GoogleGenerativeAI {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('Gemini APIキーが設定されていません。');
+  return new GoogleGenerativeAI(apiKey);
 }
