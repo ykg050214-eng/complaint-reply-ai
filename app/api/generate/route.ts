@@ -49,14 +49,21 @@ export async function POST(req: NextRequest) {
     if (!tone?.trim()) return NextResponse.json({ error: 'トーンを選択してください' }, { status: 400 });
     if (!stance?.trim()) return NextResponse.json({ error: '返信の強さを選択してください' }, { status: 400 });
 
+    // キー優先順位: ユーザー個人キー > 組織キー > 環境変数
     let apiKey = process.env.GEMINI_API_KEY;
     if (organizationId) {
       const org = await prisma.organization.findUnique({ where: { id: organizationId } });
       if (org?.geminiApiKey) apiKey = org.geminiApiKey.trim();
     }
+    const session = await getServerSession(authOptions);
+    if (session?.user) {
+      const userId = (session.user as { id: string }).id;
+      const user = await prisma.user.findUnique({ where: { id: userId }, select: { geminiApiKey: true } });
+      if (user?.geminiApiKey) apiKey = user.geminiApiKey.trim();
+    }
 
     if (!apiKey) {
-      return NextResponse.json({ error: 'Gemini APIキーが設定されていません。設定ページでAPIキーを入力してください。' }, { status: 400 });
+      return NextResponse.json({ error: 'Gemini APIキーが設定されていません。設定ページで個人のAPIキーを入力してください。' }, { status: 400 });
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
