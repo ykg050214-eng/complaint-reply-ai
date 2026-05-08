@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
 
 async function ocrPdfWithGemini(pdfBuffer: Buffer, geminiApiKey: string): Promise<string> {
   const genAI = new GoogleGenerativeAI(geminiApiKey);
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
   const base64Pdf = pdfBuffer.toString('base64');
   const result = await model.generateContent([
     { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } },

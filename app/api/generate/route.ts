@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const MODEL_NAME = 'gemini-1.5-flash';
+    const MODEL_NAME = 'gemini-2.5-flash';
 
     let knowledgeContext = '';
     if (organizationId) {
