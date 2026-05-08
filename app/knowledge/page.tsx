@@ -123,6 +123,7 @@ export default function KnowledgePage() {
           setUploading(false);
           return;
         }
+        formData.append('type', 'url');
         formData.append('url', urlInput);
       } else {
         if (!fileInput) {
@@ -130,6 +131,9 @@ export default function KnowledgePage() {
           setUploading(false);
           return;
         }
+        const ext = fileInput.name.split('.').pop()?.toLowerCase();
+        const fileType = ext === 'pdf' ? 'pdf' : ext === 'docx' ? 'docx' : 'txt';
+        formData.append('type', fileType);
         formData.append('file', fileInput);
       }
 
