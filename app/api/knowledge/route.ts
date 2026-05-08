@@ -50,15 +50,13 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(docs);
 }
 
-
-// OCR fallback using Gemini Vision
 async function ocrPdfWithGemini(pdfBuffer: Buffer, geminiApiKey: string): Promise<string> {
   const genAI = new GoogleGenerativeAI(geminiApiKey);
   const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
   const base64Pdf = pdfBuffer.toString('base64');
   const result = await model.generateContent([
     { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } },
-    'ãã®PDFã«æ¸ããã¦ãããã­ã¹ãããã¹ã¦æ­£ç¢ºã«æ½åºãã¦ãã ãããæ¸å¼ãæ¹è¡ã¯ã§ããã ãä¿æãã¦ãã ããããã­ã¹ãã®ã¿ãè¿ããèª¬æã¯ä¸è¦ã§ãã',
+    'このPDFに書かれているテキストをすべて正確に抽出してください。書式や改行はできるだけ保持してください。テキストのみを返し、説明は不要です。',
   ]);
   return result.response.text();
 }
@@ -102,7 +100,6 @@ export async function POST(req: NextRequest) {
         const data = await pdfParse(buffer);
         content = data.text || '';
         if (!content || content.trim().length < 10) {
-          // Fallback: OCR via Gemini Vision
           const org = await prisma.organization.findUnique({ where: { id: organizationId } });
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const orgApiKey = (org as any)?.geminiApiKey?.trim() || process.env.GEMINI_API_KEY;
@@ -111,19 +108,19 @@ export async function POST(req: NextRequest) {
               content = await ocrPdfWithGemini(buffer, orgApiKey);
               if (!content || content.trim().length < 10) {
                 return NextResponse.json(
-                  { error: 'PDFãããã­ã¹ããæ½åºã§ãã¾ããã§ãããæå­ãé³¥æãªã¹ã­ã£ã³PDFãããã­ã¹ããã¼ã¹ã®PDFããä½¿ç¨ãã ããã' },
+                  { error: 'PDFからテキストを抽出できませんでした。テキストベースのPDFか、読み取り可能なスキャンPDFをご使用ください。' },
                   { status: 400 }
                 );
               }
             } catch (ocrErr) {
               return NextResponse.json(
-                { error: `OCRå¦çã«å¤±æãã¾ãã: ${ocrErr instanceof Error ? ocrErr.message : String(ocrErr)}` },
+                { error: 'OCR処理に失敗しました: ' + (ocrErr instanceof Error ? ocrErr.message : String(ocrErr)) },
                 { status: 400 }
               );
             }
           } else {
             return NextResponse.json(
-              { error: 'APIã­ã¼ãè¨­å®ããã¦ããªããããç»åPDFã®OCRãã§ãã¾ãããè¨­å®ãã¼ã¸ã§APIã­ã¼ãè¨­å®ãã¦ãã ããã' },
+              { error: 'APIキーが設定されていないため、画像PDFのOCRができません。設定ページでAPIキーを設定してください。' },
               { status: 400 }
             );
           }
@@ -131,7 +128,7 @@ export async function POST(req: NextRequest) {
       } catch (pdfError: any) {
         console.error('PDF parse error:', pdfError);
         return NextResponse.json({
-          error: `PDFã®è§£æã«å¤±æãã¾ãã: ${pdfError?.message || 'ä¸æãªã¨ã©ã¼'}ããã¹ã¯ã¼ãä¿è­·ãããPDFãã¹ã­ã£ã³ç»åPDFã¯å¯¾å¿ãã¦ãã¾ããã`
+          error: 'PDFの解析に失敗しました: ' + (pdfError?.message || '不明なエラー')
         }, { status: 400 });
       }
     } else if (type === 'docx') {
@@ -141,13 +138,12 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  if (!content.trim()) return NextResponse.json({ error: 'ã³ã³ãã³ããæ½åºã§ãã¾ããã§ãã' }, { status: 400 });
+  if (!content.trim()) return NextResponse.json({ error: 'コンテンツを抽出できませんでした' }, { status: 400 });
 
   const doc = await prisma.knowledgeDocument.create({
     data: { organizationId, name, type, sourceUrl, content, status: 'processing' },
   });
 
-  // Embed chunks in background
   (async () => {
     try {
       const embOrg = await prisma.organization.findUnique({ where: { id: organizationId } });
