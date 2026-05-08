@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { getAnthropicClient, MODEL_NAME } from '@/lib/openai';
 import { prisma } from '@/lib/prisma';
 import { retrieveRelevantChunks } from '@/lib/rag';
 
@@ -19,10 +17,12 @@ ${knowledgeContext ? `
 
 ${knowledgeContext}
 
-※上記情報はこのアプリ内にのみ保存された会社専用情報です。` : ''}`;
+※上記情報はこのアプリ内にのみ保存された会社専用情報です。` : ''}
+
+必ずJSON形式のみで返してください。説明文やコードブロックは不要です。`;
 }
 
-function buildUserPrompt(body: any): string {
+function buildUserPrompt(body: Record<string, string>): string {
   return `以下のクレームに返信してください：
 
 【クレーム内容】
@@ -49,18 +49,21 @@ export async function POST(req: NextRequest) {
     if (!tone?.trim()) return NextResponse.json({ error: 'トーンを選択してください' }, { status: 400 });
     if (!stance?.trim()) return NextResponse.json({ error: '返信の強さを選択してください' }, { status: 400 });
 
-    let apiKey = process.env.GEMINI_API_KEY;
+    let apiKey: string | undefined = process.env.ANTHROPIC_API_KEY;
     if (organizationId) {
       const org = await prisma.organization.findUnique({ where: { id: organizationId } });
       if (org?.geminiApiKey) apiKey = org.geminiApiKey.trim();
     }
 
-    if (!apiKey) {
-      return NextResponse.json({ error: 'Gemini APIキーが設定されていません。設定ページでAPIキーを入力してください。' }, { status: 400 });
+    let client;
+    try {
+      client = getAnthropicClient(apiKey);
+    } catch {
+      return NextResponse.json(
+        { error: 'Anthropic APIキーが設定されていません。Vercelの環境変数にANTHROPIC_API_KEYを設定するか、設定ページで組織のAPIキーを入力してください。' },
+        { status: 500 }
+      );
     }
-
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const MODEL_NAME = 'gemini-2.0-flash';
 
     let knowledgeContext = '';
     if (organizationId) {
@@ -70,16 +73,26 @@ export async function POST(req: NextRequest) {
       } catch {}
     }
 
-    const model = genAI.getGenerativeModel({
+    const message = await client.messages.create({
       model: MODEL_NAME,
-      generationConfig: { responseMimeType: 'application/json' },
+      max_tokens: 2048,
+      system: buildSystemPrompt(knowledgeContext),
+      messages: [{ role: 'user', content: buildUserPrompt(body) }],
     });
-    const prompt = `${buildSystemPrompt(knowledgeContext)}\n\n${buildUserPrompt(body)}`;
-    const result = await model.generateContent(prompt);
-    const raw = result.response.text();
-    const parsed = JSON.parse(raw);
 
-    await getServerSession(authOptions);
+    const raw = message.content[0].type === 'text' ? message.content[0].text : '';
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      return NextResponse.json({ error: 'AIの応答形式が正しくありません。もう一度お試しください。' }, { status: 500 });
+    }
+
+    let parsed: { generatedReply: string; replyIntent: string; improvementPoints: string; ngExpressions: string };
+    try {
+      parsed = JSON.parse(jsonMatch[0]);
+    } catch {
+      return NextResponse.json({ error: 'AIの応答を解析できませんでした。もう一度お試しください。' }, { status: 500 });
+    }
+
     const record = await prisma.complaintResponse.create({
       data: {
         organizationId: organizationId || null,
@@ -105,9 +118,11 @@ export async function POST(req: NextRequest) {
       replyIntent: record.replyIntent,
       improvementPoints: record.improvementPoints,
       ngExpressions: record.ngExpressions,
-      modelName: MODEL_NAME
+      modelName: MODEL_NAME,
     });
-  } catch (error: any) {
-    return NextResponse.json({ error: 'AI返信文の生成に失敗しました。' + (error?.message || '') }, { status: 500 });
+  } catch (error: unknown) {
+    console.error('Generate error:', error);
+    const message = error instanceof Error ? error.message : '不明なエラーが発生しました。';
+    return NextResponse.json({ error: `AI返信文の生成に失敗しました。${message}` }, { status: 500 });
   }
 }

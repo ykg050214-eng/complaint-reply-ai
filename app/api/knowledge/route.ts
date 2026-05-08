@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import Anthropic from '@anthropic-ai/sdk';
 
 const CHUNK_SIZE = 800;
 const CHUNK_OVERLAP = 100;
@@ -15,30 +15,46 @@ function chunkText(text: string): string[] {
     chunks.push(text.slice(start, end).trim());
     start += CHUNK_SIZE - CHUNK_OVERLAP;
   }
-  return chunks.filter(c => c.length > 50);
+  return chunks.filter((c) => c.length > 50);
 }
 
-async function embedChunks(chunks: string[], genAI: GoogleGenerativeAI): Promise<number[][]> {
-  const embModel = genAI.getGenerativeModel({ model: 'text-embedding-004' });
-  const embeddings = await Promise.all(
-    chunks.map(async (chunk) => {
-      const result = await embModel.embedContent(chunk);
-      return result.embedding.values;
-    })
-  );
-  return embeddings;
+async function ocrPdfWithClaude(pdfBuffer: Buffer, anthropicApiKey: string): Promise<string> {
+  const client = new Anthropic({ apiKey: anthropicApiKey });
+  const base64Pdf = pdfBuffer.toString('base64');
+
+  const message = await client.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 4096,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'document',
+            source: { type: 'base64', media_type: 'application/pdf', data: base64Pdf },
+          } as Parameters<typeof client.messages.create>[0]['messages'][0]['content'][0],
+          {
+            type: 'text',
+            text: 'このPDFに書かれているテキストをすべて正確に抽出してください。書式や改行はできるだけ保持してください。テキストのみを返し、説明は不要です。',
+          },
+        ],
+      },
+    ],
+  });
+
+  return message.content[0].type === 'text' ? message.content[0].text : '';
 }
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!(session?.user as any)?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!(session?.user as Record<string, unknown>)?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
   const orgId = searchParams.get('organizationId');
   if (!orgId) return NextResponse.json({ error: 'organizationId required' }, { status: 400 });
 
   const member = await prisma.organizationMember.findUnique({
-    where: { organizationId_userId: { organizationId: orgId, userId: (session!.user as any).id } },
+    where: { organizationId_userId: { organizationId: orgId, userId: (session!.user as Record<string, string>).id } },
   });
   if (!member) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
@@ -50,20 +66,9 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(docs);
 }
 
-async function ocrPdfWithGemini(pdfBuffer: Buffer, geminiApiKey: string): Promise<string> {
-  const genAI = new GoogleGenerativeAI(geminiApiKey);
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-  const base64Pdf = pdfBuffer.toString('base64');
-  const result = await model.generateContent([
-    { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } },
-    'このPDFに書かれているテキストをすべて正確に抽出してください。書式や改行はできるだけ保持してください。テキストのみを返し、説明は不要です。',
-  ]);
-  return result.response.text();
-}
-
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  if (!(session?.user as any)?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!(session?.user as Record<string, unknown>)?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const formData = await req.formData();
   const organizationId = formData.get('organizationId') as string;
@@ -72,7 +77,7 @@ export async function POST(req: NextRequest) {
   if (!organizationId) return NextResponse.json({ error: 'organizationId required' }, { status: 400 });
 
   const member = await prisma.organizationMember.findUnique({
-    where: { organizationId_userId: { organizationId, userId: (session!.user as any).id } },
+    where: { organizationId_userId: { organizationId, userId: (session!.user as Record<string, string>).id } },
   });
   if (!member) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
@@ -101,11 +106,10 @@ export async function POST(req: NextRequest) {
         content = data.text || '';
         if (!content || content.trim().length < 10) {
           const org = await prisma.organization.findUnique({ where: { id: organizationId } });
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const orgApiKey = (org as any)?.geminiApiKey?.trim() || process.env.GEMINI_API_KEY;
-          if (orgApiKey) {
+          const apiKey = org?.geminiApiKey?.trim() || process.env.ANTHROPIC_API_KEY;
+          if (apiKey) {
             try {
-              content = await ocrPdfWithGemini(buffer, orgApiKey);
+              content = await ocrPdfWithClaude(buffer, apiKey);
               if (!content || content.trim().length < 10) {
                 return NextResponse.json(
                   { error: 'PDFからテキストを抽出できませんでした。テキストベースのPDFか、読み取り可能なスキャンPDFをご使用ください。' },
@@ -125,10 +129,10 @@ export async function POST(req: NextRequest) {
             );
           }
         }
-      } catch (pdfError: any) {
+      } catch (pdfError: unknown) {
         console.error('PDF parse error:', pdfError);
         return NextResponse.json({
-          error: 'PDFの解析に失敗しました: ' + (pdfError?.message || '不明なエラー')
+          error: 'PDFの解析に失敗しました: ' + (pdfError instanceof Error ? pdfError.message : '不明なエラー'),
         }, { status: 400 });
       }
     } else if (type === 'docx') {
@@ -146,16 +150,7 @@ export async function POST(req: NextRequest) {
 
   (async () => {
     try {
-      const embOrg = await prisma.organization.findUnique({ where: { id: organizationId } });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const embApiKey = (embOrg as any)?.geminiApiKey?.trim() || process.env.GEMINI_API_KEY || '';
-      if (!embApiKey) {
-        await prisma.knowledgeDocument.update({ where: { id: doc.id }, data: { status: 'error' } });
-        return;
-      }
-      const genAI = new GoogleGenerativeAI(embApiKey);
       const chunks = chunkText(content);
-      const embeddings = await embedChunks(chunks, genAI);
       await prisma.$transaction(
         chunks.map((chunk, i) =>
           prisma.documentChunk.create({
@@ -163,18 +158,6 @@ export async function POST(req: NextRequest) {
           })
         )
       );
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = await prisma.documentChunk.findFirst({
-          where: { documentId: doc.id, chunkIndex: i },
-        });
-        if (chunk) {
-          await prisma.$executeRawUnsafe(
-            `UPDATE "DocumentChunk" SET embedding = $1::vector WHERE id = $2`,
-            JSON.stringify(embeddings[i]),
-            chunk.id
-          );
-        }
-      }
       await prisma.knowledgeDocument.update({ where: { id: doc.id }, data: { status: 'ready' } });
     } catch {
       await prisma.knowledgeDocument.update({ where: { id: doc.id }, data: { status: 'error' } });

@@ -1,33 +1,34 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { prisma } from './prisma';
 
 export async function retrieveRelevantChunks(
   query: string,
   organizationId: string,
-  geminiApiKey: string,
+  _apiKey?: string,
   topK = 5
 ): Promise<string[]> {
   try {
-    const genAI = new GoogleGenerativeAI(geminiApiKey);
-    const embModel = genAI.getGenerativeModel({ model: 'text-embedding-004' });
-    const embResult = await embModel.embedContent(query);
-    const queryEmbedding = embResult.embedding.values;
+    const keywords = query
+      .split(/[\s、。，．！？!?]+/)
+      .filter((k) => k.length > 1)
+      .slice(0, 6);
 
-    const results = await prisma.$queryRawUnsafe<{ content: string; similarity: number }[]>(
-      `SELECT dc.content, 1 - (dc.embedding <=> $1::vector) as similarity
+    if (keywords.length === 0) return [];
+
+    const conditions = keywords.map((_, i) => `dc.content ILIKE $${i + 2}`).join(' OR ');
+    const params: unknown[] = [organizationId, ...keywords.map((k) => `%${k}%`), topK];
+
+    const results = await prisma.$queryRawUnsafe<{ content: string }[]>(
+      `SELECT DISTINCT dc.content
        FROM "DocumentChunk" dc
        JOIN "KnowledgeDocument" kd ON dc."documentId" = kd.id
-       WHERE kd."organizationId" = $2
-         AND dc.embedding IS NOT NULL
+       WHERE kd."organizationId" = $1
          AND kd.status = 'ready'
-       ORDER BY dc.embedding <=> $1::vector
-       LIMIT $3`,
-      JSON.stringify(queryEmbedding),
-      organizationId,
-      topK
+         AND (${conditions})
+       LIMIT $${keywords.length + 2}`,
+      ...params
     );
 
-    return results.filter((r) => r.similarity > 0).map((r) => r.content);
+    return results.map((r) => r.content);
   } catch {
     return [];
   }

@@ -111,9 +111,9 @@ export default function SettingsPage() {
       )}
 
       <div className="mb-6 p-4 border border-gray-200 rounded-lg bg-gray-50">
-        <h2 className="text-lg font-semibold mb-1">🔑 Gemini API キー設定</h2>
+        <h2 className="text-lg font-semibold mb-1">🔑 Anthropic API キー設定</h2>
         <p className="text-sm text-gray-600 mb-3">
-          組織専用の Gemini API キーをここで設定・変更できます。設定したキーはこの組織のリクエストにのみ使用されます。
+          組織専用の Anthropic API キーをここで設定・変更できます。設定したキーはこの組織のリクエストにのみ使用されます。
         </p>
 
         {selectedOrg ? (
@@ -135,7 +135,7 @@ export default function SettingsPage() {
                 type="password"
                 value={apiKeyInput}
                 onChange={(e) => setApiKeyInput(e.target.value)}
-                placeholder={apiKeyHasKey ? 'キーを更新する場合は入力' : 'AIza...'}
+                placeholder={apiKeyHasKey ? 'キーを更新する場合は入力' : 'sk-ant-...'}
                 className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm font-mono"
               />
               <button
@@ -161,10 +161,10 @@ export default function SettingsPage() {
       <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
         <p className="font-semibold mb-2">⚠️ 重要な注意事項</p>
         <ul className="space-y-1 list-disc list-inside">
-          <li>このアプリはご自身の Gemini API キーを使用します。</li>
-          <li>API 利用料金はご自身の Gemini アカウントに発生します。</li>
+          <li>このアプリはご自身の Anthropic API キーを使用します。</li>
+          <li>API 利用料金はご自身の Anthropic アカウントに発生します。</li>
           <li>キーはデータベースに保存され、この組織のリクエストにのみ使用されます。</li>
-          <li>Gemini のダッシュボードで使用量を確認できます。</li>
+          <li>Anthropic のダッシュボードで使用量を確認できます。</li>
         </ul>
       </div>
     </main>

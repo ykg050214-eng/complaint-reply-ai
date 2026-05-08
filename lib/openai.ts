@@ -1,7 +1,9 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-export const MODEL_NAME = 'gemini-1.5-flash';
-export function getGeminiClient(): GoogleGenerativeAI {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('Gemini APIキーが設定されていません。');
-  return new GoogleGenerativeAI(apiKey);
+import Anthropic from '@anthropic-ai/sdk';
+
+export const MODEL_NAME = 'claude-haiku-4-5-20251001';
+
+export function getAnthropicClient(apiKey?: string): Anthropic {
+  const key = apiKey || process.env.ANTHROPIC_API_KEY;
+  if (!key) throw new Error('Anthropic APIキーが設定されていません。');
+  return new Anthropic({ apiKey: key });
 }
