@@ -29,12 +29,6 @@ export default function KnowledgePage() {
   const [fileInput, setFileInput] = useState<File | null>(null);
   const [activeTab, setActiveTab] = useState<'file' | 'url'>('file');
 
-  // API Key state
-  const [apiKeyInput, setApiKeyInput] = useState('');
-  const [apiKeyMasked, setApiKeyMasked] = useState('');
-  const [apiKeyHasKey, setApiKeyHasKey] = useState(false);
-  const [apiKeySaving, setApiKeySaving] = useState(false);
-  const [apiKeyMsg, setApiKeyMsg] = useState('');
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -51,7 +45,6 @@ export default function KnowledgePage() {
   useEffect(() => {
     if (selectedOrg) {
       fetchDocuments();
-      fetchApiKey();
     }
   }, [selectedOrg]);
 
@@ -72,41 +65,6 @@ export default function KnowledgePage() {
     }
   };
 
-  const fetchApiKey = async () => {
-    setApiKeyMasked('');
-    setApiKeyHasKey(false);
-    const res = await fetch(`/api/organizations/apikey?organizationId=${selectedOrg}`);
-    if (res.ok) {
-      const data = await res.json();
-      setApiKeyHasKey(data.hasKey);
-      setApiKeyMasked(data.maskedKey || '');
-    }
-  };
-
-  const handleSaveApiKey = async () => {
-    if (!apiKeyInput.trim()) return;
-    setApiKeySaving(true);
-    setApiKeyMsg('');
-    try {
-      const res = await fetch('/api/organizations/apikey', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ organizationId: selectedOrg, apiKey: apiKeyInput }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setApiKeyMsg('APIキーを保存しました。');
-        setApiKeyInput('');
-        fetchApiKey();
-      } else {
-        setApiKeyMsg(data.error || '保存に失敗しました。');
-      }
-    } catch {
-      setApiKeyMsg('エラーが発生しました。');
-    } finally {
-      setApiKeySaving(false);
-    }
-  };
 
   const handleUpload = async () => {
     if (!selectedOrg) return;
@@ -189,42 +147,6 @@ export default function KnowledgePage() {
                 <option key={org.id} value={org.id}>{org.name}</option>
               ))}
             </select>
-          </div>
-
-          {/* Gemini API キー設定 */}
-          <div className="mb-6 p-4 border border-gray-200 rounded-lg bg-gray-50">
-            <h2 className="text-lg font-semibold mb-1 flex items-center gap-2">
-              <span>🔑</span> Gemini API キー設定
-            </h2>
-            <p className="text-sm text-gray-600 mb-3">
-              組織専用の Gemini API キーを設定します。設定すると、この組織のリクエストにのみ使用されます。
-            </p>
-            {apiKeyHasKey && (
-              <p className="text-sm text-green-700 mb-2">
-                現在のキー: <span className="font-mono">{apiKeyMasked}</span>
-              </p>
-            )}
-            <div className="flex gap-2">
-              <input
-                type="password"
-                value={apiKeyInput}
-                onChange={(e) => setApiKeyInput(e.target.value)}
-                placeholder={apiKeyHasKey ? 'キーを更新する場合は入力' : 'AIza...'}
-                className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm"
-              />
-              <button
-                onClick={handleSaveApiKey}
-                disabled={!apiKeyInput.trim() || apiKeySaving}
-                className="bg-blue-600 text-white px-4 py-2 rounded text-sm disabled:opacity-50"
-              >
-                {apiKeySaving ? '保存中...' : '保存'}
-              </button>
-            </div>
-            {apiKeyMsg && (
-              <p className={`mt-2 text-sm ${apiKeyMsg.includes('保存しました') ? 'text-green-600' : 'text-red-600'}`}>
-                {apiKeyMsg}
-              </p>
-            )}
           </div>
 
           {/* ドキュメントアップロード */}

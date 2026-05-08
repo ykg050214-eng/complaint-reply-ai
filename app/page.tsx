@@ -20,17 +20,10 @@ export default function HomePage() {
       setOrganizations(orgs);
       if (orgs.length > 0) setSelectedOrgId(orgs[0].id);
     }).catch(() => {});
-    // 個人キーも確認
     fetch('/api/user/apikey').then(r => r.json()).then(d => {
-      if (d.hasKey) setHasApiKey(true);
-    }).catch(() => {});
+      setHasApiKey(d.hasKey ?? false);
+    }).catch(() => setHasApiKey(false));
   }, [session]);
-  useEffect(() => {
-    if (!selectedOrgId) return;
-    fetch(`/api/organizations/apikey?organizationId=${selectedOrgId}`)
-      .then(r => r.json()).then(d => { if (d.hasKey) setHasApiKey(true); else setHasApiKey(prev => prev ?? false); })
-      .catch(() => setHasApiKey(prev => prev ?? false));
-  }, [selectedOrgId]);
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
