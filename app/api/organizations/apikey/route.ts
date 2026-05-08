@@ -14,14 +14,13 @@ export async function GET(req: NextRequest) {
   if (!orgId) return NextResponse.json({ error: 'organizationId required' }, { status: 400 });
 
   const member = await prisma.organizationMember.findUnique({
-    where: { organizationId_userId: { organizationId: orgId, userId: (session.user as Record<string, string>).id } },
+    where: { organizationId_userId: { organizationId: orgId, userId: (session.user as any).id } },
   });
   if (!member) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
   const org = await prisma.organization.findUnique({ where: { id: orgId } });
   const hasKey = !!(org?.geminiApiKey);
-  const key = org?.geminiApiKey || '';
-  const maskedKey = hasKey ? 'sk-ant-...' + key.slice(-4) : null;
+  const maskedKey = hasKey ? 'AIza...' + org!.geminiApiKey!.slice(-4) : null;
 
   return NextResponse.json({ hasKey, maskedKey });
 }
@@ -36,7 +35,7 @@ export async function POST(req: NextRequest) {
   if (!organizationId) return NextResponse.json({ error: 'organizationId required' }, { status: 400 });
 
   const member = await prisma.organizationMember.findUnique({
-    where: { organizationId_userId: { organizationId, userId: (session.user as Record<string, string>).id } },
+    where: { organizationId_userId: { organizationId, userId: (session.user as any).id } },
   });
   if (!member || !['owner', 'admin'].includes(member.role)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
