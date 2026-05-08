@@ -4,12 +4,12 @@ import { Send, Loader2 } from 'lucide-react';
 import AlertBox from './AlertBox';
 interface FormData { complaintText: string; industry: string; channel: string; tone: string; stance: string; extraInfo: string; companyName: string; customerName: string; }
 interface GenerateResult { id: string; generatedReply: string; replyIntent: string; improvementPoints: string; ngExpressions: string; modelName: string; }
-interface ComplaintFormProps { onSuccess: (result: GenerateResult) => void; }
+interface ComplaintFormProps { onSuccess: (result: GenerateResult) => void; organizationId?: string; }
 const industries = ['スクール・教室','店舗・飲食','美容・サロン','EC・通販','営業・法人対応','不動産','医療・整体','士業・コンサル','その他'];
 const channels = ['メール','LINE','チャット','口コミ返信','電話後のフォロー文','社内共有文'];
 const tones = ['とても丁寧','やわらかい','誠実','簡潔','やや毅然'];
 const stances = ['全面的に謝罪','謝罪しつつ説明','事実確認を挟む','必要以上に謝らない','毅然と対応'];
-export default function ComplaintForm({ onSuccess }: ComplaintFormProps) {
+export default function ComplaintForm({ onSuccess, organizationId }: ComplaintFormProps) {
   const [formData, setFormData] = useState<FormData>({ complaintText: '', industry: '', channel: '', tone: '', stance: '', extraInfo: '', companyName: '', customerName: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +23,8 @@ export default function ComplaintForm({ onSuccess }: ComplaintFormProps) {
     if (!formData.stance) { setValidationError('返信の強さを選択してください。'); return; }
     setLoading(true);
     try {
-      const res = await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(formData) });
+      const payload = { ...formData, ...(organizationId ? { organizationId } : {}) };
+      const res = await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const data = await res.json();
       if (!res.ok) { setError(data.error || '生成に失敗しました。'); return; }
       onSuccess(data);
