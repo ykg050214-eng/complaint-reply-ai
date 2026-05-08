@@ -1,17 +1,31 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import Header from '@/components/Header';
 import ComplaintForm from '@/components/ComplaintForm';
 import ResultCard from '@/components/ResultCard';
 import AlertBox from '@/components/AlertBox';
 import { CheckCircle2 } from 'lucide-react';
 interface GenerateResult { id: string; generatedReply: string; replyIntent: string; improvementPoints: string; ngExpressions: string; modelName: string; }
+interface Organization { id: string; name: string; }
 export default function HomePage() {
+  const { data: session } = useSession();
   const [result, setResult] = useState<GenerateResult | null>(null);
-  const [apiConfigured, setApiConfigured] = useState<boolean | null>(null);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [selectedOrgId, setSelectedOrgId] = useState<string>('');
+  const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
   useEffect(() => {
-    fetch('/api/check-api-key').then(r => r.json()).then(d => setApiConfigured(d.configured)).catch(() => setApiConfigured(false));
-  }, []);
+    if (!session) return;
+    fetch('/api/organizations').then(r => r.json()).then((orgs: Organization[]) => {
+      setOrganizations(orgs);
+      if (orgs.length > 0) setSelectedOrgId(orgs[0].id);
+    }).catch(() => {});
+  }, [session]);
+  useEffect(() => {
+    if (!selectedOrgId) return;
+    fetch(`/api/organizations/apikey?organizationId=${selectedOrgId}`)
+      .then(r => r.json()).then(d => setHasApiKey(d.hasKey)).catch(() => setHasApiKey(false));
+  }, [selectedOrgId]);
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
@@ -21,17 +35,25 @@ export default function HomePage() {
           <p className="text-gray-500 mb-1">クレーム内容を入力するだけで、丁寧で誠実な返信文をAIが作成します。</p>
           <p className="text-sm text-gray-400">メール、LINE、口コミ返信、チャット対応などに使える返信文を、業種やトーンに合わせて自動生成します。</p>
         </div>
-        {apiConfigured !== null && (
+        {organizations.length > 1 && (
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">組織を選択</label>
+            <select value={selectedOrgId} onChange={e => setSelectedOrgId(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full max-w-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+              {organizations.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+          </div>
+        )}
+        {selectedOrgId && hasApiKey !== null && (
           <div className="mb-6">
-            {apiConfigured
-              ? <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-4 py-2"><CheckCircle2 className="w-4 h-4" />OpenAI APIキーが設定されています。</div>
-              : <AlertBox type="warning" message="OpenAI APIキーが未設定です。Vercelの環境変数にOPENAI_API_KEYを設定してください。" />}
+            {hasApiKey
+              ? <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-4 py-2"><CheckCircle2 className="w-4 h-4" />Gemini APIキーが設定されています。</div>
+              : <AlertBox type="warning" message="Gemini APIキーが未設定です。設定ページでAPIキーを入力してください。" />}
           </div>
         )}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
             <h2 className="font-semibold text-gray-700 mb-4 text-base">クレーム情報を入力</h2>
-            <ComplaintForm onSuccess={setResult} />
+            <ComplaintForm onSuccess={setResult} organizationId={selectedOrgId || undefined} />
           </div>
           <div>
             {result ? (
